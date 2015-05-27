@@ -15,7 +15,9 @@
 
 /// Shorthand for RFM12B group byte in rf12_buf.
 #define rf12_grp        rf12_buf[0]
-/// Shorthand for RFM12B header byte in rf12_buf.
+/// Shorthand *if* config.group == 0
+#define PICO_LEN        rf12_buf[1]
+
 #define rf12_hdr        rf12_buf[1]
 /// Shorthand for RFM12B length byte in rf12_buf.
 #define rf12_len        rf12_buf[2]

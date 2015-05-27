@@ -133,6 +133,7 @@ static volatile int8_t rxstate;      // current transceiver state
 static volatile uint8_t packetBytes; // Count of bytes in packet
 static volatile uint16_t discards;   // Count of packets discarded
 static volatile uint8_t reentry = false;
+static volatile uint8_t packetReady = false;
 
 static ROM_UINT8 configRegs_compat [] ROM_DATA = {
   0x2E, 0xA0, // SyncConfig = sync on, sync size = 5
@@ -159,8 +160,8 @@ static ROM_UINT8 configRegs_compat [] ROM_DATA = {
   0x1A, 0x42, // AfcBw 125 KHz Channel filter BW
   0x1E, 0x02, // AFC is manually cleared
 //  0x25, 0x80, // DioMapping1 = RSSI threshold
-  0x29, 0xA0, // RssiThresh ... -80dB
-
+  0x29, 0xA8, // RssiThresh ... -84dB
+//  0x2D, 0x05, // PreambleSize = 5
   0x2E, 0xA0, // SyncConfig = sync on, sync size = 5
   0x2F, 0xAA, // SyncValue1 = 0xAA
   0x30, 0xAA, // SyncValue2 = 0xAA
@@ -311,10 +312,11 @@ uint16_t RF69::recvDone_compat (uint8_t* buf) {
         writeReg(REG_DIOMAPPING1, DMAP1_SYNCADDRESS);    // Interrupt trigger
         setMode(MODE_RECEIVER);
         writeReg(REG_AFCFEI, AfcClear);
+        packetReady = false;
         // end identical code        
         break;
     case TXRECV:
-        if (rxfill >= rf12_len + 5 || rxfill >= RF_MAX) {
+        if (packetReady || rxfill >= RF_MAX) { // Support native packets
             rxstate = TXIDLE;
             if (rf12_len > RF12_MAXDATA) {
                 crc = 1;  // force bad crc for invalid packet                
@@ -335,6 +337,7 @@ uint16_t RF69::recvDone_compat (uint8_t* buf) {
                     writeReg(REG_DIOMAPPING1, DMAP1_SYNCADDRESS);// Interrupt trigger
                     setMode(MODE_RECEIVER);
                     writeReg(REG_AFCFEI, AfcClear);
+                    packetReady = false;
         // end identical code        
                     return ~0;
                 }
@@ -442,11 +445,11 @@ void RF69::interrupt_compat () {
                         if (in <= RF12_MAXDATA) {  // capture and
                             payloadLen = in;       // validate length byte
                         } else {
-                            recvBuf[rxfill++] = 0; // Set rf12_len to zero!
-                            payloadLen = -2;       // skip CRC in payload
-                            in = ~0;               // fake CRC 
-                            recvBuf[rxfill++] = in;// into buffer
-                            packetBytes+=2;        // don't trip underflow
+//                            recvBuf[rxfill++] = 0; // Set rf12_len to zero!
+                            payloadLen = (66 - rxfill); // native packet?
+//                            in = ~0;               // fake CRC 
+//                            recvBuf[rxfill++] = in;// into buffer
+//                            packetBytes+=2;        // don't trip underflow
                             crc = 1;               // set bad CRC
                             badLen++;
                         }
@@ -459,6 +462,7 @@ void RF69::interrupt_compat () {
                         writeReg(REG_AFCFEI, AfcClear);// Whilst in RX mode
                         setMode(MODE_STANDBY);  // Get radio out of RX mode
                         stillCollecting = false;
+                        packetReady = true;
                         break;
                     }
             } 

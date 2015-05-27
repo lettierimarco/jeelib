@@ -67,6 +67,13 @@
 
 /// Save a few bytes of flash by declaring const if used more than once.
 const char INITFAIL[] PROGMEM = "init failed\n";
+const uint8_t whitening[] PROGMEM = {
+  // see http://www.semtech.com/images/datasheet/AN1200.18_STD.pdf
+  255,135,184,89,183,161,204,36,87,94,75,156,14,233,234,80,42,190,180,27,182,
+  176,93,241,230,154,227,69,253,44,83,24,12,202,201,251,73,55,229,168,81,59,
+  47,97,170,114,24,132,2,35,35,171,99,137,81,179,231,139,114,144,76,232,251,
+  193,255,15,112,179,111,67,
+};
 static unsigned int NodeMap;
 static unsigned int newNodeMap;
 static byte stickyGroup = 212;
@@ -1268,6 +1275,7 @@ static unsigned int getIndex (byte group, byte node) {
             return(false);
 }
 void loop () {
+    uint8_t whitened = false;
 #if TINY
     if (_receive_buffer_index) {
         handleInput(inChar());
@@ -1314,10 +1322,8 @@ void loop () {
               CRCbadMaxRSSI = observedRX.rssi2;   
 #endif
             activityLed(0);
-            if (config.quiet_mode)
-                return;
-            crc = false;
 /*
+From: @jcw
 Yep, can confirm that this now works both ways:
 
 word crc = 0x1D0F;
@@ -1337,36 +1343,55 @@ Serial.println(~crc, HEX);
 5) puzzles like these can only be solved after 3 AM :)
 
 */
-            char whitened = false;
-            volatile uint8_t* b = &rf12_buf[1];   // Oversize causes a crash!
-            uint16_t l = ((rf12_buf[1] ^ 0xFF) & 0x3F) + 3;    // Include the Length... & ...CRC
-            Serial.println(l);
-            if (l < 67) {                             // Oversize probably means not whitened
-                volatile uint8_t* b = &rf12_buf[1];   // Oversize causes a crash!
-                SX1232RadioComputeWhitening(b, l);    // Remove assumed whitening
+            volatile uint8_t len;
+            volatile uint8_t* b = &PICO_LEN;
+            len = (*b ^ 0xFF);
+            if (len <= 64) {                                // Oversize possibly means not whitened
+                SX1232RadioComputeWhitening(b, len + 2);    // Remove assumed whitening
                 whitened = true;
-            }               
+            } else len = *b;
             
-            uint16_t picoCRC = 0x1D0F;
-            for (uint8_t i = 0; i < rf12_buf[1] + 1; i++) {
-                picoCRC = _crc_xmodem_update(picoCRC, rf12_buf[i + 1]);
-            }
-
-            unsigned int c = rf12_data[rf12_hdr - 1];
-            c = (c << 8) + rf12_data[rf12_hdr];
-            if (~picoCRC == c) {
-                if (whitened) 
-                  printOneChar('w');
-                showString(PSTR("PICO"));
-                n = (rf12_buf[1]) + 1;  // Include Length to print full CRC
-            } else {
-                 if (whitened)
-//                   SX1232RadioComputeWhitening(b, l);    // unravel the de-whitening
-                 showString(PSTR("   ?"));
-                 if (n > 20) // print at most 20 bytes if crc is wrong
-                    n = 20;
+            if (len <= 64) {
+//                if (whitened) Serial.print("Whitened, len=");
+//                Serial.println(len);
+            
+                uint16_t picoCRC = 0x1D0F;
+                for (uint8_t i = 0; i <= (len + 3); i++) {
+ //                   Serial.println(*(b + i));
+                    picoCRC = _crc_xmodem_update(picoCRC, *(b + i));
+                }
+                /*
+                Serial.println("CRC");
+                Serial.println(picoCRC, HEX);
+                Serial.println(~picoCRC, HEX);
+                
+                unsigned int c = *(b + (len + 1));
+                Serial.println(c);
+                c = (c << 8) | *(b + (len + 2));
+                Serial.println(*(b + (len + 2)));
+                */
+                if (picoCRC ^= 0x1D0F) {
+                    if (whitened) 
+                      printOneChar('w');
+                    showString(PSTR("PICO"));
+                    for (byte i = 0; i < len + 4; ++i) {
+                        if (!(config.output & 1)) // Decimal output?
+                          printOneChar(' ');
+                        showByte(*((b - 1) + i));
+                    }
+                    Serial.println();
+                    return;
+                }
             }
         }
+        if (config.quiet_mode)
+            return;
+        crc = false;
+       
+        if (whitened)
+//          SX1232RadioComputeWhitening(b, len + 3);    // unravel the de-whitening
+//          if (n > 20) // print at most 20 bytes if crc is wrong
+              n = 20;
         if (config.output & 0x1)
             printOneChar('X');
    // Compatibility with HouseMon v0.7.0     else printOneChar(' ');
