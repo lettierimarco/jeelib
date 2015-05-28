@@ -1347,18 +1347,21 @@ Serial.println(~crc, HEX);
             volatile uint8_t* b = &PICO_LEN;
             len = (*b ^ 0xFF);
             if (len <= 64) {                                // Oversize possibly means not whitened
-                SX1232RadioComputeWhitening(b, len + 2);    // Remove assumed whitening
+                SX1232RadioComputeWhitening(b, len + 3);    // Remove assumed whitening
                 whitened = true;
-            } else len = *b;
+            } else {
+                len = *b;
+                whitened = false;
+            }
             
             if (len <= 64) {
 //                if (whitened) Serial.print("Whitened, len=");
 //                Serial.println(len);
             
                 uint16_t picoCRC = 0x1D0F;
-                for (uint8_t i = 0; i <= (len + 3); i++) {
- //                   Serial.println(*(b + i));
-                    picoCRC = _crc_xmodem_update(picoCRC, *(b + i));
+                for (uint8_t i = 0; i <= (len + 2); i++) {
+//                    Serial.println(b[i]);
+                    picoCRC = _crc_xmodem_update(picoCRC, b[i]);
                 }
                 /*
                 Serial.println("CRC");
@@ -1370,7 +1373,7 @@ Serial.println(~crc, HEX);
                 c = (c << 8) | *(b + (len + 2));
                 Serial.println(*(b + (len + 2)));
                 */
-                if (picoCRC ^= 0x1D0F) {
+                if (picoCRC == 0x1D0F) {
                     if (whitened) 
                       printOneChar('w');
                     showString(PSTR("PICO"));

@@ -429,6 +429,7 @@ void RF69::interrupt_compat () {
             rxP++;
             crc = ~0;
             packetBytes = 0;
+            payloadLen = RF12_MAXDATA;    
             
             
             for (;;) { // busy loop, to get each data byte as soon as it comes in 
@@ -440,7 +441,7 @@ void RF69::interrupt_compat () {
                       crc = _crc16_update(crc, group);
                     } 
                     volatile uint8_t in = readReg(REG_FIFO);
-                    
+/*                    
                     if (rxfill == 2) {
                         if (in <= RF12_MAXDATA) {  // capture and
                             payloadLen = in;       // validate length byte
@@ -454,7 +455,7 @@ void RF69::interrupt_compat () {
                             badLen++;
                         }
                     }
-                    
+*/                    
                     recvBuf[rxfill++] = in;
                     packetBytes++;
                     crc = _crc16_update(crc, in);              
