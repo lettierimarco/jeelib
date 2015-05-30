@@ -1220,6 +1220,8 @@ static void nodeShow(byte group) {
     printOneChar(',');
     Serial.print((RF69::packetShort));     // Packet ended short
     printOneChar(',');
+    Serial.print((RF69::possibleNative));  // Possible LPC8xx native packet
+    printOneChar(',');
     printOneChar('[');
     Serial.print(RF69::unexpected);
     printOneChar(',');
@@ -1392,8 +1394,8 @@ Serial.println(~crc, HEX);
         crc = false;
        
         if (whitened)
-//          SX1232RadioComputeWhitening(b, len + 3);    // unravel the de-whitening
-//          if (n > 20) // print at most 20 bytes if crc is wrong
+          SX1232RadioComputeWhitening(b, len + 3);    // unravel the de-whitening
+          if (n > 20) // print at most 20 bytes if crc is wrong
               n = 20;
         if (config.output & 0x1)
             printOneChar('X');

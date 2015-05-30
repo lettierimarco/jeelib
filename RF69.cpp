@@ -126,6 +126,7 @@ namespace RF69 {
     uint16_t nestedInterrupts;
     uint8_t  IRQFLAGS2;
     uint8_t  DIOMAPPING1;
+    uint16_t possibleNative;
     }
 
 static volatile uint8_t rxfill;      // number of data bytes in rf12_buf
@@ -429,7 +430,7 @@ void RF69::interrupt_compat () {
             rxP++;
             crc = ~0;
             packetBytes = 0;
-            payloadLen = RF12_MAXDATA;    
+            payloadLen = 0;    
             
             
             for (;;) { // busy loop, to get each data byte as soon as it comes in 
@@ -441,21 +442,29 @@ void RF69::interrupt_compat () {
                       crc = _crc16_update(crc, group);
                     } 
                     volatile uint8_t in = readReg(REG_FIFO);
-/*                    
+                    
+                    if (rxfill == 0 && in >= 191) { // Possible native packet?
+                        payloadLen = (in ^ 255) + 2;// Collect length + CRC
+                        possibleNative++;
+                    }
+                                             
                     if (rxfill == 2) {
-                        if (in <= RF12_MAXDATA) {  // capture and
-                            payloadLen = in;       // validate length byte
-                        } else {
-//                            recvBuf[rxfill++] = 0; // Set rf12_len to zero!
-                            payloadLen = (66 - rxfill); // native packet?
-//                            in = ~0;               // fake CRC 
-//                            recvBuf[rxfill++] = in;// into buffer
-//                            packetBytes+=2;        // don't trip underflow
-                            crc = 1;               // set bad CRC
-                            badLen++;
+                        if (payloadLen == 0 ) {
+                            if (in <= RF12_MAXDATA) {
+                                payloadLen = in;
+                            } else {
+                                // Invalid length classic packet handling
+                                recvBuf[rxfill++] = 0; // Set rf12_len to zero!
+                                payloadLen = 0;        // discard FIFO
+                                in = ~0;               // fake CRC 
+                                recvBuf[rxfill++] = in;// into buffer
+                                packetBytes+=2;        // don't trip underflow
+                                crc = 1;               // set bad CRC
+                                badLen++;
+                            }
                         }
                     }
-*/                    
+                    
                     recvBuf[rxfill++] = in;
                     packetBytes++;
                     crc = _crc16_update(crc, in);              
