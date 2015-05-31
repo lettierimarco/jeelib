@@ -443,13 +443,23 @@ void RF69::interrupt_compat () {
                     } 
                     volatile uint8_t in = readReg(REG_FIFO);
                     
-                    if (rxfill == 0 && in >= 191) { // Possible native packet?
-                        payloadLen = (in ^ 255) + 2;// Collect length + CRC
-                        possibleNative++;
+                    if (rxfill == 1) {
+                        if(in <= 64) {
+                            // Possible unwhitened native packet
+                            payloadLen = (in) + 2;
+                            possibleNative++;
+                        } else {
+                            if (in >= 191) {
+                                // Possible whitened native packet
+                                payloadLen = (in ^ 255) + 2;
+                                possibleNative++;
+                            }
+                        }
                     }
                                              
                     if (rxfill == 2) {
                         if (payloadLen == 0 ) {
+                            // Not a native packet contender
                             if (in <= RF12_MAXDATA) {
                                 payloadLen = in;
                             } else {
