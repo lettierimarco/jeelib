@@ -120,7 +120,8 @@ namespace RF69 {
     uint8_t  present;
     uint16_t pcIntCount;
     uint8_t  pcIntBits;
-    int8_t   payloadLen;
+    int8_t   classicLen;
+    int8_t   nativeLen;
     uint16_t badLen;
     uint16_t packetShort;
     uint16_t nestedInterrupts;
@@ -430,7 +431,8 @@ void RF69::interrupt_compat () {
             rxP++;
             crc = ~0;
             packetBytes = 0;
-            payloadLen = 0;    
+            classicLen = 0;
+            nativeLen = 1;    
             
             
             for (;;) { // busy loop, to get each data byte as soon as it comes in 
@@ -446,43 +448,44 @@ void RF69::interrupt_compat () {
                     if (rxfill == 1) {
                         if(in <= 64) {
                             // Possible unwhitened native packet
-                            payloadLen = (in) + 2;
+                            nativeLen = (in);// + 2;
                             possibleNative++;
                         } else {
                             if (in >= 191) {
                                 // Possible whitened native packet
-                                payloadLen = (in ^ 255) + 2;
+                                nativeLen = (in ^ 255);// + 2;
                                 possibleNative++;
                             }
                         }
                     }
                                              
                     if (rxfill == 2) {
-                        if (payloadLen == 0 ) {
-                            // Not a native packet contender
-                            if (in <= RF12_MAXDATA) {
-                                payloadLen = in;
-                            } else {
-                                // Invalid length classic packet handling
-                                recvBuf[rxfill++] = 0; // Set rf12_len to zero!
-                                payloadLen = 0;        // discard FIFO
-                                in = ~0;               // fake CRC 
-                                recvBuf[rxfill++] = in;// into buffer
-                                packetBytes+=2;        // don't trip underflow
-                                crc = 1;               // set bad CRC
-                                badLen++;
-                            }
+                        if (in <= RF12_MAXDATA) {
+                            classicLen = in;
+                        } elseif (nativeLen == 0) {
+                            // Invalid length classic packet handling
+                            recvBuf[rxfill++] = 0; // Set rf12_len to zero!
+                            classicLen = 0;        // discard FIFO
+                            in = ~0;               // fake CRC 
+                            recvBuf[rxfill++] = in;// into buffer
+                            packetBytes+=2;        // don't trip underflow
+                            crc = 1;               // set bad CRC
+                            badLen++;
                         }
                     }
                     
                     recvBuf[rxfill++] = in;
+// TODO                    nativeLen--;
                     packetBytes++;
                     crc = _crc16_update(crc, in);              
-                    if (rxfill >= (payloadLen + 5)) {  // Trap end of payload
-                        writeReg(REG_AFCFEI, AfcClear);// Whilst in RX mode
-                        setMode(MODE_STANDBY);  // Get radio out of RX mode
+                    if (rxfill >= (classicLen + 5)) {  // Trap end of classic
                         stillCollecting = false;
                         packetReady = true;
+                        if (nativeLen > 0) {
+                        // Copy remaning buffer
+                        }
+                        writeReg(REG_AFCFEI, AfcClear);// Whilst in RX mode
+                        setMode(MODE_STANDBY);  // Get radio out of RX mode
                         break;
                     }
             } 
