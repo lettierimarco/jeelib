@@ -246,6 +246,7 @@ byte busyCount;
 byte missedTests;
 unsigned int testTX;
 unsigned int testRX;
+unsigned int confirmedNative = 0;
 
 #if MESSAGING
 static byte semaphores[MAX_NODES];
@@ -1220,7 +1221,9 @@ static void nodeShow(byte group) {
     printOneChar(',');
     Serial.print((RF69::packetShort));     // Packet ended short
     printOneChar(',');
-    Serial.print((RF69::possibleNative));  // Possible LPC8xx native packet
+    Serial.print((RF69::possibleNative));  // Unconfirmed LPC8xx native packet
+    printOneChar(',');
+    Serial.print((confirmedNative));       // Confirmed LPC8xx native packet
     printOneChar(',');
     printOneChar('[');
     Serial.print(RF69::unexpected);
@@ -1278,6 +1281,8 @@ static unsigned int getIndex (byte group, byte node) {
 }
 void loop () {
     uint8_t whitened = false;
+    volatile uint8_t len;
+    volatile uint8_t* bufP;
 #if TINY
     if (_receive_buffer_index) {
         handleInput(inChar());
@@ -1345,14 +1350,13 @@ Serial.println(~crc, HEX);
 5) puzzles like these can only be solved after 3 AM :)
 
 */
-            volatile uint8_t len;
-            volatile uint8_t* b = &PICO_LEN;
-            len = (*b ^ 0xFF);
+            bufP = &PICO_LEN;
+            len = (*bufP ^ 0xFF);
             if (len <= 64) {                                // Oversize possibly means not whitened
-                SX1232RadioComputeWhitening(b, len + 3);    // Remove assumed whitening
+                SX1232RadioComputeWhitening(bufP, len + 3);    // Remove assumed whitening
                 whitened = true;
             } else {
-                len = *b;
+                len = *bufP;
                 whitened = false;
             }
             
@@ -1362,27 +1366,29 @@ Serial.println(~crc, HEX);
             
                 uint16_t picoCRC = 0x1D0F;
                 for (uint8_t i = 0; i <= (len + 2); i++) {
-//                    Serial.println(b[i]);
-                    picoCRC = _crc_xmodem_update(picoCRC, b[i]);
+//                    Serial.println(bufP[i]);
+                    picoCRC = _crc_xmodem_update(picoCRC, bufP[i]);
                 }
                 /*
                 Serial.println("CRC");
                 Serial.println(picoCRC, HEX);
                 Serial.println(~picoCRC, HEX);
                 
-                unsigned int c = *(b + (len + 1));
+                unsigned int c = *(bufP + (len + 1));
                 Serial.println(c);
-                c = (c << 8) | *(b + (len + 2));
-                Serial.println(*(b + (len + 2)));
+                c = (c << 8) | *(bufP + (len + 2));
+                Serial.println(*(bufP + (len + 2)));
                 */
                 if (picoCRC == 0x1D0F) {
+                    RF69::possibleNative--;  // Confirm possible is native
+                    confirmedNative++;
                     if (whitened) 
                       printOneChar('w');
                     showString(PSTR("PICO"));
                     for (byte i = 0; i < len + 4; ++i) {
                         if (!(config.output & 1)) // Decimal output?
                           printOneChar(' ');
-                        showByte(*((b - 1) + i));
+                        showByte(*((bufP - 1) + i));  // Step back one to group number
                     }
                     Serial.println();
                     return;
@@ -1394,7 +1400,7 @@ Serial.println(~crc, HEX);
         crc = false;
        
         if (whitened)
-          SX1232RadioComputeWhitening(b, len + 3);    // unravel the de-whitening
+          SX1232RadioComputeWhitening(bufP, len + 3);    // unravel the de-whitening
           if (n > 20) // print at most 20 bytes if crc is wrong
               n = 20;
         if (config.output & 0x1)
