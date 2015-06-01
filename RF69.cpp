@@ -479,10 +479,11 @@ void RF69::interrupt_compat () {
                     packetBytes++;
                     crc = _crc16_update(crc, in);              
                     if (rxfill >= (classicLen + 5)) {  // Trap end of classic
+                        // Need to preserve value of crc before adding rest of buffer, *might* be a native packet.
                         stillCollecting = false;
                         packetReady = true;
                         if (nativeLen > 0) {
-                        // Copy remaning buffer
+                        // Copy over remaning FIFO
                         }
                         writeReg(REG_AFCFEI, AfcClear);// Whilst in RX mode
                         setMode(MODE_STANDBY);  // Get radio out of RX mode
