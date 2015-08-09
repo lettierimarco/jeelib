@@ -710,8 +710,13 @@ public:
     } Commands;
     
     /// Set up with a buffer of specified size
+#ifdef Serial
     InputParser (byte size, Commands*, Stream& =Serial);
     InputParser (byte* buf, byte size, Commands*, Stream& =Serial);
+#else
+    InputParser (byte size, Commands*, Stream&);
+    InputParser (byte* buf, byte size, Commands*, Stream&);
+#endif
     
     /// Number of data bytes
     byte count() { return fill; }
