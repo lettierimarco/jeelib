@@ -95,11 +95,6 @@ void rf12_spiInit(void);
 /// Call this once with the node ID, frequency band, and optional group.
 uint8_t rf12_initialize(uint8_t id, uint8_t band, uint8_t group=0xD4, uint16_t frequency=1600);
 
-/// Call this to restore the initial settings when switching from OOK to FSK
-/// with the node ID, frequency band, and optional group.
-/// The RFM12B will not be reset, saving a minumum 0f 50ms.
-void rf12_restore(uint8_t id, uint8_t band, uint8_t group=0xD4);
-
 /// Initialize the RFM12B module from settings stored in EEPROM by "RF12demo"
 /// don't call rf12_initialize() if you init the hardware with rf12_config().
 /// @return the node ID as 1..31, or 0 if there is no config on EEPROM.
@@ -115,13 +110,6 @@ uint8_t rf12_recvDone(void);
 
 /// Returns RSSI approximation for last received packet
 uint8_t rf12_getRSSI();
-
-/// Use this function to change the data rate after rf12_initialize. 
-void rf12_setBitrate(uint8_t rate);
-
-/// Use this function to switch the driver into fixed packet length mode
-/// packet_len <  RF12_MAXDATA, 0 = disable, receive standard format packages.
-void rf12_setFixedLength(uint8_t packet_len);
 
 /// Call this to check whether a new transmission can be started.
 /// @return true when a new transmission may be started with rf12_sendStart().
@@ -151,18 +139,9 @@ void rf12_sendWait(uint8_t mode);
 /// Use this only when the radio was initialized with a fake zero node ID.
 void rf12_onOff(uint8_t value);
 
-/// Power off the RFM12B if n==0
+/// Power off the RFM12B, ms > 0 sets watchdog to wake up again after N * 32 ms.
 /// @note if off, calling this with -1 can be used to bring the RFM12B back up.
 void rf12_sleep(char n);
-
-/// Request a wakeup-event after this many ms.
-/// Maximum time is about 2 years but limited by unsigned long which gives about 49 days
-/// @note set to 0 to disable a running wakeup-timer
-void rf12_setWatchdog(unsigned long ms);
-
-/// Checks if there was a wakeup-call from the RFM12 watchdog.
-/// @return true if RFM12 fired a watchdog interrupt
-char rf12_watchdogFired();
 
 /// Return true if the supply voltage is below 3.1V.
 char rf12_lowbat(void);
