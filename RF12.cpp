@@ -172,11 +172,17 @@ volatile uint16_t rfmstate;         // current power management setting of the R
 uint8_t drssi;                      // digital rssi state (see binary search tree below and rf12_getRSSI()
 uint8_t drssi_bytes_per_decision;   // number of bytes required per drssi decision
 
+struct drssi_dec_t {
+    uint8_t up;
+    uint8_t down;
+    uint8_t threshold;
+};
+
 const drssi_dec_t drssi_dec_tree[] = {
             /*  up    down  thres*/
     /* 0 */ { B1001, B1000, B000 },  /* B1xxx show final values, B0xxx are intermediate */
     /* 1 */ { B0010, B0000, B001 },  /* values where next threshold has to be set.      */
-    /* 2 */ { B1011, B1010, B010 },  /* Traversing of this three is in rf_12interrupt() */
+    /* 2 */ { B1011, B1010, B010 },  /* Traversing of this tree is in rf_12interrupt()  */
     /* 3 */ { B0101, B0001, B011 },  // <- start value
     /* 4 */ { B1101, B1100, B100 },
     /* 5 */ { B1110, B0100, B101 }
@@ -293,7 +299,7 @@ static uint16_t rf12_xferSlow (uint16_t cmd) {
 }
 
 #if OPTIMIZE_SPI
-static uint16_t rf12_xfer (uint16_t cmd) {
+uint16_t rf12_xfer (uint16_t cmd) {
     // writing can take place at full speed, even 8 MHz works
     bitClear(SS_PORT, cs_pin);
     rf12_byte(cmd >> 8) << 8;
