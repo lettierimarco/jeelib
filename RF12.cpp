@@ -14,7 +14,7 @@
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////
-#define RF69_COMPAT 1    // Set this true to use the RF69 driver
+#define RF69_COMPAT 0    // Set this true to use the RF69 driver
 #define PINCHG_IRQ  0    // Set this true to use pin-change interrupts
                          // The above flags must be set similarly in RF69_avr.h
 
@@ -169,8 +169,6 @@ static volatile uint16_t interruptCount = 0;
 static volatile uint8_t rxfill;     // number of data bytes in rf12_buf
 static volatile int8_t rxstate;     // current transceiver state
 volatile uint16_t rfmstate;         // current power management setting of the RFM12 module
-volatile uint16_t state;            // last seen rfm12b state
-volatile uint8_t rf12_gotwakeup;	// 1 if there was a wakeup-call from RFM12
 uint8_t drssi;                      // digital rssi state (see binary search tree below and rf12_getRSSI()
 uint8_t drssi_bytes_per_decision;   // number of bytes required per drssi decision
 
@@ -379,8 +377,19 @@ static void rf12_interrupt () {
         rf12_buf[rxfill++] = in;
         rf12_crc = crc_update(rf12_crc, in);
 
-        if (rxfill >= rf12_len + 5 + RF12_COMPAT || rxfill >= RF_MAX)
-            rf12_xfer(RF_IDLE_MODE);
+     	  // do drssi binary-tree search
+	      if ( drssi < 3 && ((rxfill-2)%drssi_bytes_per_decision)==0 ) {// not yet final value
+	         // top nibble when going up, bottom one when going down
+	       	 drssi = bitRead(status,8)
+              ? (drssi_dec_tree[drssi] & B1111)
+	      			: (drssi_dec_tree[drssi] >> 4);
+	          if ( drssi < 3 ) {     // not yet final destination, set new threshold
+              	rf12_xfer(RF_RECV_CONTROL | drssi*2+1);
+           	}
+        }
+
+	    if (rxfill >= rf12_len + 5 + RF12_COMPAT || rxfill >= RF_MAX)
+          rf12_xfer(RF_IDLE_MODE);
     } else {
         uint8_t out;
 
@@ -461,6 +470,8 @@ static void rf12_recvStart () {
         rf12_crc = crc_update(rf12_crc, group);
 #endif
     rxstate = TXRECV;
+    drssi = 1;              // set drssi to start value
+    rf12_xfer(RF_RECV_CONTROL | drssi*2+1);
 
     rf12_xfer(RF_RECEIVER_ON);
 }
@@ -546,7 +557,7 @@ uint8_t rf12_canSend () {
     // also see https://github.com/jcw/jeelib/issues/33
       
     status = rf12_control(0x0000);
-    if (rxstate == TXRECV && rxfill == 0 && (status & RF_RSSI_BIT) == 0) {
+    if (rxstate == TXRECV && rxfill == 0/* && (status & RF_RSSI_BIT) == 0*/) {
         rf12_control(RF_IDLE_MODE); // stop receiver
         rxstate = TXIDLE;
         return 1;
