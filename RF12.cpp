@@ -172,16 +172,15 @@ volatile uint16_t rfmstate;         // current power management setting of the R
 uint8_t drssi;                      // digital rssi state (see binary search tree below and rf12_getRSSI()
 uint8_t drssi_bytes_per_decision;   // number of bytes required per drssi decision
 
-const uint8_t drssi_dec_tree[] = {
-  /* state,drssi,final, returned, up,      dwn */
-	/*  A,   0,    no,    0001 */  3 << 4 | 4,
-	/*  *,   1,    no,     --  */  0 << 4 | 2, // starting value
-	/*  B,   2,    no,    0101 */  5 << 4 | 6
-	/*  C,   3,   yes,    1000 */
-	/*  D,   4,   yes,    1010 */
-	/*  E,   5,   yes,    1100 */
-	/*  F,   6,   yes,    1110 */
-};  //                    \ Bit 1 indicates final state, others the signal strength
+const drssi_dec_t drssi_dec_tree[] = {
+            /*  up    down  thres*/
+    /* 0 */ { B1001, B1000, B000 },  /* B1xxx show final values, B0xxx are intermediate */
+    /* 1 */ { B0010, B0000, B001 },  /* values where next threshold has to be set.      */
+    /* 2 */ { B1011, B1010, B010 },  /* Traversing of this three is in rf_12interrupt() */
+    /* 3 */ { B0101, B0001, B011 },  // <- start value
+    /* 4 */ { B1101, B1100, B100 },
+    /* 5 */ { B1110, B0100, B101 }
+};
 
 
 #define RETRIES     8               // stop retrying after 8 times
@@ -378,15 +377,15 @@ static void rf12_interrupt () {
         rf12_crc = crc_update(rf12_crc, in);
 
      	  // do drssi binary-tree search
-	      if ( drssi < 3 && ((rxfill-2)%drssi_bytes_per_decision)==0 ) {// not yet final value
-	         // top nibble when going up, bottom one when going down
-	       	 drssi = bitRead(status,8)
-              ? (drssi_dec_tree[drssi] & B1111)
-	      			: (drssi_dec_tree[drssi] >> 4);
-	          if ( drssi < 3 ) {     // not yet final destination, set new threshold
-              	rf12_xfer(RF_RECV_CONTROL | drssi*2+1);
-           	}
-        }
+	        if ( drssi < 6 ) {       // not yet final value
+             	if ( bitRead(status,8) )  // rssi over threashold?
+            		drssi = drssi_dec_tree[drssi].up;
+        	    else
+    	            drssi = drssi_dec_tree[drssi].down;
+	            if ( drssi < 6 ) {     // not yet final destination
+                	rf12_xfer(0x94A0 | drssi_dec_tree[drssi].threshold);
+            	}
+          }
 
 	    if (rxfill >= rf12_len + 5 + RF12_COMPAT || rxfill >= RF_MAX)
           rf12_xfer(RF_IDLE_MODE);
@@ -470,7 +469,7 @@ static void rf12_recvStart () {
         rf12_crc = crc_update(rf12_crc, group);
 #endif
     rxstate = TXRECV;
-    drssi = 1;              // set drssi to start value
+    drssi = 3;              // set drssi to start value
     rf12_xfer(RF_RECV_CONTROL | drssi*2+1);
 
     rf12_xfer(RF_RECEIVER_ON);
@@ -534,9 +533,14 @@ uint8_t rf12_recvDone () {
 
 
 // return signal strength calculated out of DRSSI bit
-uint8_t rf12_getRSSI() {
-	return (drssi<3 ? drssi*2+2 : 8|(drssi-3)*2);
+int8_t rf12_getRSSI() {
+    if (! bitRead(drssi,3))
+        return 0;
+    
+    const int8_t table[] = {-106, -100, -94, -88, -82, -76, -70};
+    return table[drssi & B111];
 }
+
 /// @details
 /// Call this when you have some data to send. If it returns true, then you can
 /// use rf12_sendStart() to start the transmission. Else you need to wait and
