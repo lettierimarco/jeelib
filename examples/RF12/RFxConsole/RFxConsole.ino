@@ -1141,8 +1141,10 @@ void setup () {
 #if LED_PIN == 8
     showString(BLOC);
 #endif
-
-#if DEBUG
+    Serial.print((__DATE__));
+    Serial.print(" ");
+    Serial.print((__TIME__));
+  #if DEBUG
 //    dumpRegs();
     dumpEEprom();
 #endif
@@ -1652,6 +1654,10 @@ void loop () {
             showString(PSTR("dB"));
         }
         printOneChar(')');
+#else
+        Serial.print(" (");
+        Serial.print(rf12_getRSSI());
+        Serial.print(")");
 #endif
         Serial.println();
         

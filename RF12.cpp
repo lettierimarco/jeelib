@@ -15,7 +15,8 @@
 
 ///////////////////////////////////////////////////////////////////////////////
 #define RF69_COMPAT 0    // Set this true to use the RF69 driver
-#define PINCHG_IRQ  0    // Set this true to use pin-change interrupts
+#define PINCHG_IRQ  0    // Set this true to use pin-change 
+
                          // The above flags must be set similarly in RF69_avr.h
 
 // NOTE: The following does not apply to the ATTiny processors which uses USI
@@ -168,26 +169,20 @@ static volatile uint16_t interruptCount = 0;
 
 static volatile uint8_t rxfill;     // number of data bytes in rf12_buf
 static volatile int8_t rxstate;     // current transceiver state
-volatile uint16_t rfmstate;         // current power management setting of the RFM12 module
 uint8_t drssi;                      // digital rssi state (see binary search tree below and rf12_getRSSI()
-uint8_t drssi_bytes_per_decision;   // number of bytes required per drssi decision
+//uint8_t drssi_bytes_per_decision;   // number of bytes required per drssi decision
+#define DRSSI_BYTES_PER_DECISION 7  // 7 should be the value for 49.3k Jeelib   
 
-struct drssi_dec_t {
-    uint8_t up;
-    uint8_t down;
-    uint8_t threshold;
-};
-
-const drssi_dec_t drssi_dec_tree[] = {
-            /*  up    down  thres*/
-    /* 0 */ { B1001, B1000, B000 },  /* B1xxx show final values, B0xxx are intermediate */
-    /* 1 */ { B0010, B0000, B001 },  /* values where next threshold has to be set.      */
-    /* 2 */ { B1011, B1010, B010 },  /* Traversing of this tree is in rf_12interrupt()  */
-    /* 3 */ { B0101, B0001, B011 },  // <- start value
-    /* 4 */ { B1101, B1100, B100 },
-    /* 5 */ { B1110, B0100, B101 }
-};
-
+const uint8_t drssi_dec_tree[] = {
+  /* state,drssi,final, returned, up,      dwn */
+	/*  A,   0,    no,    0001 */  3 << 4 | 4,
+	/*  *,   1,    no,     --  */  0 << 4 | 2, // starting value
+	/*  B,   2,    no,    0101 */  5 << 4 | 6
+	/*  C,   3,   yes,    1000 */
+	/*  D,   4,   yes,    1010 */
+	/*  E,   5,   yes,    1100 */
+	/*  F,   6,   yes,    1110 */
+};  //                    \ Bit 1 indicates final state, others the signal strength
 
 #define RETRIES     8               // stop retrying after 8 times
 #define RETRY_MS    1000            // resend packet every second until ack'ed
@@ -381,7 +376,23 @@ static void rf12_interrupt () {
 #endif
         rf12_buf[rxfill++] = in;
         rf12_crc = crc_update(rf12_crc, in);
-
+        
+    	    // do drssi binary-tree search
+        if ( drssi < 3 && ((rxfill-2)%DRSSI_BYTES_PER_DECISION)==0 ) {// not yet final value
+            // top nibble when going up, bottom one when going down
+	        	drssi = bitRead(status,8)
+	        			? (drssi_dec_tree[drssi] & B1111)
+	        			: (drssi_dec_tree[drssi] >> 4);
+	          if ( drssi < 3 ) {     // not yet final destination, set new threshold
+                	rf12_xfer(RF_RECV_CONTROL | drssi*2+1);
+            }
+        }
+        
+        
+        
+        
+        
+/*
      	  // do drssi binary-tree search
 	        if ( drssi < 6 ) {       // not yet final value
              	if ( bitRead(status,8) )  // rssi over threashold?
@@ -389,10 +400,10 @@ static void rf12_interrupt () {
         	    else
     	            drssi = drssi_dec_tree[drssi].down;
 	            if ( drssi < 6 ) {     // not yet final destination
-                	rf12_xfer(0x94A0 | drssi_dec_tree[drssi].threshold);
+                	rf12_xfer(RF_RECV_CONTROL | drssi_dec_tree[drssi].threshold);
             	}
           }
-
+*/
 	    if (rxfill >= rf12_len + 5 + RF12_COMPAT || rxfill >= RF_MAX)
           rf12_xfer(RF_IDLE_MODE);
     } else {
@@ -475,7 +486,7 @@ static void rf12_recvStart () {
         rf12_crc = crc_update(rf12_crc, group);
 #endif
     rxstate = TXRECV;
-    drssi = 3;              // set drssi to start value
+    drssi = 2;              // set drssi to start value
     rf12_xfer(RF_RECV_CONTROL | drssi*2+1);
 
     rf12_xfer(RF_RECEIVER_ON);
@@ -540,11 +551,14 @@ uint8_t rf12_recvDone () {
 
 // return signal strength calculated out of DRSSI bit
 int8_t rf12_getRSSI() {
-    if (! bitRead(drssi,3))
+/*    if (! bitRead(drssi,3))
         return 0;
     
-    const int8_t table[] = {-106, -100, -94, -88, -82, -76, -70};
+    const int8_t table[] = {-106, -100, -94, -88, -82, -76, -70, -66};
     return table[drssi & B111];
+    */
+//	return (drssi<3 ? drssi*2+2 : 8|(drssi-3)*2); 
+    return drssi;   
 }
 
 /// @details
@@ -760,6 +774,16 @@ uint8_t rf12_initialize (uint8_t id, uint8_t band, uint8_t g, uint16_t f) {
     rf12_xfer(0xC049); // 1.66MHz,3.1V
 
     rxstate = TXIDLE;
+/*    
+	const long int decisions_per_sec = 900;
+//	rf12_xfer(0xc600 | rate);
+  uint8_t rate = 6;
+	unsigned long bits_per_second = (10000000UL / 29UL / (1 + (rate & 0x7f)) / (1 + (rate >> 7) * 7));
+	unsigned long bytes_per_second = bits_per_second / 8;
+	byte drssi_bytes_per_decision = (bytes_per_second + decisions_per_sec - 1) / decisions_per_sec;
+  Serial.print("drssi_bytes_per_decision=");
+  Serial.println(drssi_bytes_per_decision);  
+*/
 
 #ifdef EIMSK    // ATMega
     #if PINCHG_IRQ && !RF69_COMPAT
